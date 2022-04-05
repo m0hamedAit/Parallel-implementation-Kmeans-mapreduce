@@ -25,6 +25,7 @@ public class KmeansReducer extends Reducer<Text,Text,Text,Text> {
             nb_points++;
         }
         double mean= somme/nb_points;
-        context.write(new Text(key+","+mean),new Text(pixels.toString())); // output will be ( old_centroid,new_centroide  pixels[] )
+        context.write(new Text(key+","+mean),new Text(pixels.toString())); // output will be ( old_centroid,new_centroide  pixels[] )        // pixels[] : pixel1/pixel2/...
     }
 }
+

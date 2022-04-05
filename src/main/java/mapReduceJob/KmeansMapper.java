@@ -33,10 +33,10 @@ public class KmeansMapper extends Mapper<LongWritable, Text, Text,Text> {
 
     @Override
     protected void map(LongWritable key, Text value, Mapper<LongWritable, Text, Text, Text>.Context context) throws IOException, InterruptedException {
-        Pixel p = new Pixel();
-        p.lineToPixel(value.toString());
-        double min=Double.MAX_VALUE,d;
-        double nearest_center = 0;
+      Pixel p = new Pixel();
+      p.lineToPixel(value.toString());
+      double min=Double.MAX_VALUE,d;
+      double nearest_center = 0;
         for (double c:centroide) {
             d = Math.abs(c-p.getValue());
             if (d<min){
@@ -47,3 +47,4 @@ public class KmeansMapper extends Mapper<LongWritable, Text, Text,Text> {
         context.write(new Text(String.valueOf(nearest_center)), value); // value (p.x,p.y,p.value)
     }
 }
+

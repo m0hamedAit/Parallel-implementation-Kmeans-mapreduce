@@ -12,7 +12,6 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.*;
@@ -34,27 +33,26 @@ public class KmeansDriver {
 
         StringBuilder data = new StringBuilder();
 
-        // get image from hdfs
+            // get image from hdfs
         BufferedImage image = ImageIO.read(fs.open(new Path(args[0])));
 
         int w = image.getWidth();
         int h = image.getHeight();
-        // image to data
+            // image to data
         for(int i=0;i<w;i++){
             for(int j=0;j<h;j++) {
-                int pixelVal = image.getRGB(i,j) & 0xFF;
-                if(pixelVal!=0)   // to ignore black pixels so they won't affect the process
+                int pixelVal = image.getRGB(i,j) & 0xFF; // not sure if this is the right way to get the value but it works, 'getRGB(i,j) & 0xFF' normally returns blue color value
+                if(pixelVal!=0)   // to ignore black pixels, so they won't affect the process
                     data.append(i+","+j+","+pixelVal+"\n");
             }
         }
 
-        // save data to imageData.txt
+            // save data to imageData.txt
         br1.write(data.toString());
         br1.close();
 
         int i=0; //iterations
         while(true){ // repeat mapReduce Job while iterations < 10 and centroids change after every job
-
             Job job = Job.getInstance(conf, "K-Mean MRI Job");
             job.setJarByClass(KmeansDriver.class);
             job.setMapperClass(KmeansMapper.class);
@@ -77,11 +75,11 @@ public class KmeansDriver {
 
 
 
-            // replace centroids with new centroids from output file after the end of every job //
+            // replace centroids with new centroids from last output file after the end of every job //
             FSDataOutputStream out = fs.create(new Path("hdfs://localhost:9000/inputs/centersMRI.txt"), true);
             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(out));
 
-            // get new centroids from last output
+                // get new centroids from last output
             InputStreamReader is = new InputStreamReader(fs.open(new Path("hdfs://localhost:9000/outputMRI" + i + "/part-r-00000")));
             BufferedReader br = new BufferedReader(is);
             String line = null;
@@ -100,12 +98,12 @@ public class KmeansDriver {
                 old_centroid.append("\n");
             }
 
-            // if old centroids == new centroids or iterations>=10 -> end while
+                // if old centroids == new centroids or iterations>=10 -> end while
             if(new_centroid.toString().equals(old_centroid.toString()) || i>=10){
                 break;
             }
 
-            // save new centroids to centerMRI.txt
+                // save new centroids to centerMRI.txt
             bw.write(new_centroid.toString());
 
             bw.close();
@@ -115,7 +113,6 @@ public class KmeansDriver {
         }
 
         // create images "gray_matter.gif", "white_matter.gif" , "cephalo_rachidien.png" from obtained output
-
         InputStreamReader is = new InputStreamReader(fs.open(new Path("hdfs://localhost:9000/outputMRI" + i + "/part-r-00000")));  // read last output file
         BufferedReader br = new BufferedReader(is);
 
@@ -138,10 +135,10 @@ public class KmeansDriver {
 
         String[] imagesPath = {"cephalo_rachidien.gif", "white_matter.gif", "gray_matter.gif"};
 
-        // sort centroids array by center attribute
+            // sort centroids array by center attribute
         centroids.sort(Comparator.comparingDouble(Centroid::getCenter));
 
-        // create output images
+            // create output images
         for(int j=0;j<3;j++){
             // instanciate black image
             BufferedImage bImage = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
@@ -154,3 +151,6 @@ public class KmeansDriver {
         }
     }
 }
+
+
+
