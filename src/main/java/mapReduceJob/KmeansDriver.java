@@ -21,35 +21,21 @@ import java.util.ArrayList;
 import java.util.Comparator;
 
 public class KmeansDriver {
+
+    private static boolean  CentroidsChanged = true;
+    private static  Path file = new Path("hdfs://localhost:9000/inputs/imageData.txt");
+    private static  Path output = new Path("hdfs://localhost:9000/outputs/outputMRI");
+
     public static void main(String[] args) throws IOException, InterruptedException, ClassNotFoundException, URISyntaxException {
         Configuration conf = new Configuration();
-
-        // Get data (x, y, color) from image and save them to imageData.txt //
         FileSystem fs = FileSystem.get(conf);
-        Path file = new Path("hdfs://localhost:9000/inputs/imageData.txt");
+
         if ( fs.exists( file )) { fs.delete( file, true ); }
+        // Get data (x, y, color) from image and save them to imageData.txt //
 
-        BufferedWriter br1 = new BufferedWriter( new OutputStreamWriter(fs.create(file)) );
-
-        StringBuilder data = new StringBuilder();
-
-            // get image from hdfs
+            //get image from hdfs
         BufferedImage image = ImageIO.read(fs.open(new Path(args[0])));
-
-        int w = image.getWidth();
-        int h = image.getHeight();
-            // image to data
-        for(int i=0;i<w;i++){
-            for(int j=0;j<h;j++) {
-                int pixelVal = image.getRGB(i,j) & 0xFF; // not sure if this is the right way to get the value but it works, 'getRGB(i,j) & 0xFF' normally returns blue color value
-                if(pixelVal!=0)   // to ignore black pixels, so they won't affect the process
-                    data.append(i+","+j+","+pixelVal+"\n");
-            }
-        }
-
-            // save data to imageData.txt
-        br1.write(data.toString());
-        br1.close();
+        imageToData(fs, image);
 
         int i=0; //iterations
         while(true){ // repeat mapReduce Job while iterations < 10 and centroids change after every job
@@ -69,51 +55,85 @@ public class KmeansDriver {
 
             job.addCacheFile(new URI("hdfs://localhost:9000/inputs/centersMRI.txt"));
             FileInputFormat.addInputPath(job, file); ///
-            FileOutputFormat.setOutputPath(job, new Path("/outputMRI"+i));
+
+
+            if ( fs.exists( output )) { fs.delete( output, true ); }  // delete output if exists
+            FileOutputFormat.setOutputPath(job, output);
 
             job.waitForCompletion(true); //
 
-
-
             // replace centroids with new centroids from last output file after the end of every job //
-            FSDataOutputStream out = fs.create(new Path("hdfs://localhost:9000/inputs/centersMRI.txt"), true);
-            BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(out));
-
-                // get new centroids from last output
-            InputStreamReader is = new InputStreamReader(fs.open(new Path("hdfs://localhost:9000/outputMRI" + i + "/part-r-00000")));
-            BufferedReader br = new BufferedReader(is);
-            String line = null;
-
-            StringBuilder old_centroid = new StringBuilder();
-            StringBuilder new_centroid = new StringBuilder();
-
-            while ((line = br.readLine()) != null) {
-                String[] parts = line.replaceAll("\\s+", " ").split(" ");
-                String[] centroids = parts[0].split(",");
-                //new centroids
-                new_centroid.append(centroids[1]);
-                new_centroid.append("\n");
-                //old centroids
-                old_centroid.append(centroids[0]);
-                old_centroid.append("\n");
-            }
-
-                // if old centroids == new centroids or iterations>=10 -> end while
-            if(new_centroid.toString().equals(old_centroid.toString()) || i>=10){
+            updateCentroids(fs);
+            if(i>=10 || !CentroidsChanged){
                 break;
             }
-
-                // save new centroids to centerMRI.txt
-            bw.write(new_centroid.toString());
-
-            bw.close();
-            br.close();
 
             i++;
         }
 
         // create images "gray_matter.gif", "white_matter.gif" , "cephalo_rachidien.png" from obtained output
-        InputStreamReader is = new InputStreamReader(fs.open(new Path("hdfs://localhost:9000/outputMRI" + i + "/part-r-00000")));  // read last output file
+        createImagesFromOutput(fs, image);
+    }
+
+    //extract data from IRM image
+    public static void imageToData(FileSystem fs, BufferedImage image) throws IOException {
+
+        BufferedWriter br = new BufferedWriter( new OutputStreamWriter(fs.create(file)) );
+        StringBuilder data = new StringBuilder();
+
+        // get data from image
+        for(int i=0;i<image.getWidth();i++){
+            for(int j=0;j<image.getHeight();j++) {
+                int pixelVal = image.getRGB(i,j) & 0xFF; // not sure if this is the right way to get the value but it works, 'getRGB(i,j) & 0xFF' normally returns blue color value
+                if(pixelVal!=0)   // to ignore black pixels, so they won't affect the process
+                    data.append(i+","+j+","+pixelVal+"\n");
+            }
+        }
+            // save data to imageData.txt
+        br.write(data.toString());
+        br.close();
+    }
+
+    // update centroids in centerMRI.txt file using last output
+    public static void updateCentroids(FileSystem fs) throws IOException {
+       // Path centroidsInput = new Path("hdfs://localhost:9000/inputs/centersMRI.txt");
+        //if ( fs.exists( output )) { fs.delete( output, true ); }  // delete output if exists
+        FSDataOutputStream out = fs.create(new Path("hdfs://localhost:9000/inputs/centersMRI.txt"), true);
+        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(out));
+
+        // get new centroids from last output
+        InputStreamReader is = new InputStreamReader(fs.open(new Path("hdfs://localhost:9000/outputs/outputMRI/part-r-00000")));
+        BufferedReader br = new BufferedReader(is);
+        String line = null;
+
+        StringBuilder old_centroid = new StringBuilder();
+        StringBuilder new_centroid = new StringBuilder();
+
+        while ((line = br.readLine()) != null) {
+            String[] parts = line.replaceAll("\\s+", " ").split(" ");
+            String[] centroids = parts[0].split(",");
+            //new centroids
+            new_centroid.append(centroids[1]);
+            new_centroid.append("\n");
+            //old centroids
+            old_centroid.append(centroids[0]);
+            old_centroid.append("\n");
+        }
+
+        // if old centroids == new centroids or iterations>=10 -> end while
+        if(new_centroid.toString().equals(old_centroid.toString())){
+            CentroidsChanged = false;
+        }
+
+        // save new centroids to centerMRI.txt
+        bw.write(new_centroid.toString());
+        bw.close();
+        br.close();
+    }
+
+    public static void createImagesFromOutput(FileSystem fs, BufferedImage image) throws IOException {
+
+        InputStreamReader is = new InputStreamReader(fs.open(new Path("hdfs://localhost:9000/outputs/outputMRI/part-r-00000")));  // read last output file
         BufferedReader br = new BufferedReader(is);
 
         String line1 = null;
@@ -135,13 +155,13 @@ public class KmeansDriver {
 
         String[] imagesPath = {"cephalo_rachidien.gif", "white_matter.gif", "gray_matter.gif"};
 
-            // sort centroids array by center attribute
+        // sort centroids array by center attribute
         centroids.sort(Comparator.comparingDouble(Centroid::getCenter));
 
-            // create output images
+        // create output images
         for(int j=0;j<3;j++){
             // instanciate black image
-            BufferedImage bImage = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+            BufferedImage bImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
             Centroid c = centroids.get(j);
             for(Pixel p:c.getPixels()){
                 bImage.setRGB(p.getX(), p.getY(), image.getRGB(p.getX(), p.getY()));
@@ -151,6 +171,3 @@ public class KmeansDriver {
         }
     }
 }
-
-
-
